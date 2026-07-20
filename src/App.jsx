@@ -257,7 +257,37 @@ function WaiterPicker({ selectedTable, tableWaiters, assignWaiter }) {
   );
 }
 
-function CartLines({ cart, updateQty, removeLine }) {
+function WaiterStep({ selectedTable, tableWaiters, assignWaiter }) {
+  const assigned = WAITERS.find((w) => w.id === tableWaiters[selectedTable]);
+  return (
+    <div
+      className="px-4 py-3 border-b flex items-center gap-2 transition-colors"
+      style={{
+        borderColor: "#F1ECDE",
+        background: assigned ? "transparent" : "#FBEFE6",
+      }}
+    >
+      <span
+        className="text-xs font-semibold shrink-0"
+        style={{ color: assigned ? "#163A4F" : "#C1571E" }}
+      >
+        {assigned ? "Serveur" : "Étape 1 — serveur"}
+      </span>
+      <WaiterPicker selectedTable={selectedTable} tableWaiters={tableWaiters} assignWaiter={assignWaiter} />
+    </div>
+  );
+}
+
+function CartLines({ cart, updateQty, removeLine, waiterMissing }) {
+  if (waiterMissing) {
+    return (
+      <p className="text-sm py-6 text-center opacity-60 leading-relaxed">
+        Choisis le serveur ci-dessus pour pouvoir
+        <br />
+        ajouter des articles à cette table.
+      </p>
+    );
+  }
   if (cart.length === 0) {
     return (
       <p className="text-sm py-6 text-center opacity-50">
@@ -387,6 +417,11 @@ export default function App() {
   function openModal(item) {
     if (!selectedTable) {
       showToast("Choisis une table d'abord.");
+      return;
+    }
+    if (!tableWaiters[selectedTable]) {
+      showToast("Choisis d'abord le serveur de cette table.");
+      setMobileCartOpen(true);
       return;
     }
     setModalItem({ ...item, qty: 1, price: item.price });
@@ -526,11 +561,10 @@ export default function App() {
 
       {/* Header */}
       <header
-        className="sticky top-0 z-30 px-3 sm:px-6 py-2 sm:py-3 flex items-center justify-between"
+        className="sticky top-0 z-30 px-3 sm:px-6 py-2 sm:py-3 flex items-center justify-between relative"
         style={{
           background: "#163A4F",
           color: "#F6F1E4",
-          boxShadow: "0 1px 0 rgba(79,169,140,0.4), 0 4px 14px rgba(22,58,79,0.18)",
         }}
       >
         <div className="flex items-center gap-2.5">
@@ -573,6 +607,19 @@ export default function App() {
             <History size={15} /> Historique
           </button>
         </nav>
+        <svg
+          viewBox="0 0 80 10"
+          preserveAspectRatio="none"
+          className="absolute left-0 right-0 bottom-0 translate-y-full w-full h-[9px] block pointer-events-none"
+        >
+          <defs>
+            <pattern id="scallop" width="10" height="10" patternUnits="userSpaceOnUse">
+              <rect width="10" height="10" fill="#163A4F" />
+              <path d="M0 0a5 5 0 0 0 10 0Z" fill="#EFF7F3" />
+            </pattern>
+          </defs>
+          <rect width="80" height="10" fill="url(#scallop)" />
+        </svg>
       </header>
 
       {toast && (
@@ -727,21 +774,23 @@ export default function App() {
               <div className="flex items-center gap-2 text-[#F6F1E4]">
                 <Receipt size={16} />
                 <span className="font-display text-base">
-                  {selectedTable ? `Table ${selectedTable}` : "Aucune table"}
+                  {selectedTable ? `Table ${selectedTable}` : "Choisis une table"}
                 </span>
               </div>
               <span className="font-mono text-xs text-[#F6F1E4]/70">{cartCount} art.</span>
             </div>
 
             {selectedTable && (
-              <div className="px-4 py-3 flex items-center gap-2 border-b" style={{ borderColor: "#F1ECDE" }}>
-                <span className="text-xs opacity-60 shrink-0">Serveur</span>
-                <WaiterPicker selectedTable={selectedTable} tableWaiters={tableWaiters} assignWaiter={assignWaiter} />
-              </div>
+              <WaiterStep selectedTable={selectedTable} tableWaiters={tableWaiters} assignWaiter={assignWaiter} />
             )}
 
             <div className="max-h-[35vh] lg:max-h-[42vh] overflow-y-auto px-4 py-3 divide-y" style={{ borderColor: "#F1ECDE" }}>
-              <CartLines cart={cart} updateQty={updateQty} removeLine={removeLine} />
+              <CartLines
+                cart={cart}
+                updateQty={updateQty}
+                removeLine={removeLine}
+                waiterMissing={!!selectedTable && !tableWaiters[selectedTable]}
+              />
             </div>
 
             <div className="px-4 py-3 border-t" style={{ borderColor: "#F1ECDE" }}>
@@ -792,21 +841,23 @@ export default function App() {
               <span className="flex items-center gap-2 text-[#F6F1E4]">
                 <Receipt size={15} />
                 <span className="font-display text-sm">
-                  {selectedTable ? `Table ${selectedTable}` : "Aucune table"}
+                  {selectedTable ? `Table ${selectedTable}` : "Choisis une table"}
                 </span>
               </span>
               <ChevronUp size={16} className="text-[#F6F1E4]" style={{ transform: "rotate(180deg)" }} />
             </button>
 
             {selectedTable && (
-              <div className="px-4 py-2.5 flex items-center gap-2 border-b" style={{ borderColor: "#F1ECDE" }}>
-                <span className="text-xs opacity-60 shrink-0">Serveur</span>
-                <WaiterPicker selectedTable={selectedTable} tableWaiters={tableWaiters} assignWaiter={assignWaiter} />
-              </div>
+              <WaiterStep selectedTable={selectedTable} tableWaiters={tableWaiters} assignWaiter={assignWaiter} />
             )}
 
             <div className="max-h-[42vh] overflow-y-auto px-4 py-2 divide-y" style={{ borderColor: "#F1ECDE" }}>
-              <CartLines cart={cart} updateQty={updateQty} removeLine={removeLine} />
+              <CartLines
+                cart={cart}
+                updateQty={updateQty}
+                removeLine={removeLine}
+                waiterMissing={!!selectedTable && !tableWaiters[selectedTable]}
+              />
             </div>
 
             <div className="px-4 py-3 border-t" style={{ borderColor: "#F1ECDE" }}>
@@ -843,7 +894,7 @@ export default function App() {
             <span className="flex items-center gap-2 text-[#F6F1E4]">
               <Receipt size={16} />
               <span className="font-display text-sm">
-                {selectedTable ? `Table ${selectedTable}` : "Aucune table"}
+                {selectedTable ? `Table ${selectedTable}` : "Choisis une table"}
               </span>
               <span className="font-mono text-xs text-[#F6F1E4]/70">· {cartCount} art.</span>
             </span>
