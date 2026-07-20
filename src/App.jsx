@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import {
   Plus, Minus, Trash2, Receipt, History, UtensilsCrossed,
-  ChevronLeft, X, Check, Coffee, Waves
+  ChevronLeft, ChevronUp, X, Check, Coffee, Waves
 } from "lucide-react";
 
 /* ---------------------------------------------------------
@@ -201,17 +201,87 @@ function MenuItemButton({ item, onClick }) {
   return (
     <button
       onClick={onClick}
-      className="flex items-center justify-between gap-3 rounded-xl px-4 py-4 bg-white text-left transition-transform active:scale-[0.98]"
+      className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1 sm:gap-3 rounded-xl px-3 py-2.5 sm:px-4 sm:py-4 bg-white text-left transition-transform active:scale-[0.98]"
       style={{ border: "1px solid #E4DCC7" }}
     >
-      <span className="text-base font-medium" style={{ color: "#1F2A24" }}>
+      <span className="text-[13px] sm:text-base font-medium leading-snug" style={{ color: "#1F2A24" }}>
         {item.name}
       </span>
-      <span className="font-mono text-sm shrink-0" style={{ color: "#E0793F" }}>
+      <span className="font-mono text-xs sm:text-sm shrink-0" style={{ color: "#E0793F" }}>
         {item.variable ? `${item.range} DT` : money(item.price)}
       </span>
     </button>
   );
+}
+
+function WaiterPicker({ selectedTable, tableWaiters, assignWaiter }) {
+  return (
+    <div className="flex gap-1.5 flex-wrap">
+      {WAITERS.map((w) => {
+        const isAssigned = tableWaiters[selectedTable] === w.id;
+        return (
+          <button
+            key={w.id}
+            onClick={() => assignWaiter(selectedTable, w.id)}
+            className="flex items-center gap-1 pl-1.5 pr-2.5 py-1 rounded-full text-xs font-medium transition-all"
+            style={{
+              background: isAssigned ? w.color : "#F6F1E4",
+              color: isAssigned ? "#fff" : "#163A4F",
+            }}
+          >
+            <span
+              className="w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold"
+              style={{
+                background: isAssigned ? "rgba(255,255,255,0.3)" : w.color,
+                color: "#fff",
+              }}
+            >
+              {w.initial}
+            </span>
+            {w.name}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function CartLines({ cart, updateQty, removeLine }) {
+  if (cart.length === 0) {
+    return (
+      <p className="text-sm py-6 text-center opacity-50">
+        Le panier est vide. Touche un article du menu pour l'ajouter.
+      </p>
+    );
+  }
+  return cart.map((line, idx) => (
+    <div key={idx} className="flex items-center justify-between py-2.5 gap-2">
+      <div className="min-w-0">
+        <div className="text-sm font-medium truncate">{line.name}</div>
+        <div className="font-mono text-xs opacity-60">{money(line.price)} / unité</div>
+      </div>
+      <div className="flex items-center gap-1.5 shrink-0">
+        <button
+          onClick={() => updateQty(idx, -1)}
+          className="w-6 h-6 rounded-full flex items-center justify-center"
+          style={{ background: "#F6F1E4" }}
+        >
+          <Minus size={12} />
+        </button>
+        <span className="font-mono text-sm w-4 text-center">{line.qty}</span>
+        <button
+          onClick={() => updateQty(idx, 1)}
+          className="w-6 h-6 rounded-full flex items-center justify-center"
+          style={{ background: "#F6F1E4" }}
+        >
+          <Plus size={12} />
+        </button>
+        <button onClick={() => removeLine(idx)} className="w-6 h-6 flex items-center justify-center opacity-40 hover:opacity-100">
+          <Trash2 size={13} />
+        </button>
+      </div>
+    </div>
+  ));
 }
 
 export default function App() {
@@ -227,6 +297,7 @@ export default function App() {
   const [tableWaiters, setTableWaiters] = useState({}); // { [table]: waiterId }
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState(null);
+  const [mobileCartOpen, setMobileCartOpen] = useState(false);
   const [historyDate, setHistoryDate] = useState(() => new Date().toISOString().slice(0, 10));
 
   // load persisted orders + waiter assignments
@@ -380,6 +451,7 @@ export default function App() {
       persistTableWaiters(nextW);
     }
     setSelectedTable(null);
+    setMobileCartOpen(false);
     showToast(`Commande enregistrée — Table ${order.table}`);
   }
 
@@ -443,7 +515,7 @@ export default function App() {
 
       {/* Header */}
       <header
-        className="sticky top-0 z-30 px-4 sm:px-6 py-3 flex items-center justify-between"
+        className="sticky top-0 z-30 px-3 sm:px-6 py-2 sm:py-3 flex items-center justify-between"
         style={{ background: "#163A4F", color: "#F6F1E4" }}
       >
         <div className="flex items-center gap-2.5">
@@ -491,12 +563,13 @@ export default function App() {
       )}
 
       {view === "order" ? (
-        <main className="max-w-[1440px] mx-auto px-4 sm:px-8 py-6 pb-40 lg:pb-8 grid lg:grid-cols-[minmax(0,1fr)_380px] gap-8">
+        <>
+        <main className="max-w-[1440px] mx-auto px-3 sm:px-8 py-4 sm:py-6 pb-20 lg:pb-8 grid lg:grid-cols-[minmax(0,1fr)_380px] gap-5 lg:gap-8">
           <div className="min-w-0">
             {/* Table picker */}
-            <section className="mb-6">
+            <section className="mb-4 sm:mb-6">
               <div className="flex items-baseline justify-between mb-2">
-                <h2 className="font-display text-xl" style={{ color: "#163A4F" }}>
+                <h2 className="font-display text-lg sm:text-xl" style={{ color: "#163A4F" }}>
                   Terrasse — choisis la table
                 </h2>
                 {selectedTable && (
@@ -511,17 +584,17 @@ export default function App() {
               <FrondDivider />
 
               {/* Waiter legend */}
-              <div className="flex flex-wrap items-center gap-3 mt-3 mb-1">
-                <span className="text-xs opacity-50">Serveurs :</span>
+              <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 mt-2 sm:mt-3 mb-1">
+                <span className="text-[11px] sm:text-xs opacity-50">Serveurs :</span>
                 {WAITERS.map((w) => (
-                  <span key={w.id} className="flex items-center gap-1.5 text-xs font-medium" style={{ color: "#163A4F" }}>
-                    <span className="w-2.5 h-2.5 rounded-full" style={{ background: w.color }} />
+                  <span key={w.id} className="flex items-center gap-1.5 text-[11px] sm:text-xs font-medium" style={{ color: "#163A4F" }}>
+                    <span className="w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full" style={{ background: w.color }} />
                     {w.name}
                   </span>
                 ))}
               </div>
 
-              <div className="mt-2 flex flex-wrap gap-3 max-w-3xl">
+              <div className="mt-2 grid grid-cols-8 sm:flex sm:flex-wrap gap-1.5 sm:gap-3 max-w-3xl">
                 {TABLES.map((t) => {
                   const active = selectedTable === t;
                   const hasDraft = (cartsByTable[t] || []).length > 0;
@@ -530,11 +603,11 @@ export default function App() {
                     <button
                       key={t}
                       onClick={() => setSelectedTable(t)}
-                      className="relative w-16 h-16 shrink-0 rounded-full flex items-center justify-center font-mono text-base font-semibold transition-all"
+                      className="relative w-9 h-9 sm:w-16 sm:h-16 shrink-0 rounded-full flex items-center justify-center font-mono text-[11px] sm:text-base font-semibold transition-all"
                       style={{
                         background: active ? "#163A4F" : "#FFFFFF",
                         color: active ? "#F6F1E4" : "#163A4F",
-                        border: `2px solid ${active ? "#163A4F" : waiter ? waiter.color : "#4FA98C55"}`,
+                        border: `${active ? 2 : 1.5}px solid ${active ? "#163A4F" : waiter ? waiter.color : "#4FA98C55"}`,
                         boxShadow: active ? "0 3px 10px #163A4F44" : "none",
                         transform: active ? "scale(1.06)" : "scale(1)",
                       }}
@@ -542,13 +615,13 @@ export default function App() {
                       {t}
                       {hasDraft && (
                         <span
-                          className="absolute top-0.5 right-0.5 w-2 h-2 rounded-full"
+                          className="absolute top-0 right-0 sm:top-0.5 sm:right-0.5 w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full"
                           style={{ background: "#E0793F" }}
                         />
                       )}
                       {waiter && (
                         <span
-                          className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white"
+                          className="absolute -bottom-1 sm:-bottom-1.5 left-1/2 -translate-x-1/2 w-3.5 h-3.5 sm:w-5 sm:h-5 rounded-full flex items-center justify-center text-[7px] sm:text-[10px] font-bold text-white"
                           style={{ background: waiter.color, border: "1.5px solid #F6F1E4" }}
                         >
                           {waiter.initial}
@@ -561,12 +634,12 @@ export default function App() {
             </section>
 
             {/* Category tabs */}
-            <div className="flex gap-2 overflow-x-auto pb-2 mb-4 -mx-1 px-1">
+            <div className="flex gap-1.5 sm:gap-2 overflow-x-auto pb-2 mb-3 sm:mb-4 -mx-1 px-1">
               {MENU.map((c) => (
                 <button
                   key={c.id}
                   onClick={() => setActiveCategory(c.id)}
-                  className="shrink-0 px-4 py-2 rounded-full text-sm font-medium border transition-colors"
+                  className="shrink-0 px-3 py-1.5 sm:px-4 sm:py-2 rounded-full text-xs sm:text-sm font-medium border transition-colors"
                   style={{
                     background: activeCategory === c.id ? "#4FA98C" : "#fff",
                     color: activeCategory === c.id ? "#0E2431" : "#163A4F",
@@ -581,18 +654,18 @@ export default function App() {
             {/* Items — subcategories stack one under the other so the
                 whole section is visible at once, like the printed menu */}
             {category.subcategories ? (
-              <div className="space-y-7">
+              <div className="space-y-4 sm:space-y-7">
                 {category.subcategories.map((sub) => (
                   <section key={sub.id}>
-                    <div className="flex items-center gap-2.5 mb-3">
-                      <h3 className="font-display text-base" style={{ color: "#163A4F" }}>
+                    <div className="flex items-center gap-2.5 mb-2 sm:mb-3">
+                      <h3 className="font-display text-sm sm:text-base" style={{ color: "#163A4F" }}>
                         {sub.label}
                       </h3>
                       <div className="flex-1">
                         <FrondDivider tone="#4FA98C" />
                       </div>
                     </div>
-                    <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                    <div className="grid grid-cols-2 xl:grid-cols-3 gap-2 sm:gap-3">
                       {sub.items.map((item) => (
                         <MenuItemButton key={item.id} item={item} onClick={() => openModal(item)} />
                       ))}
@@ -601,7 +674,7 @@ export default function App() {
                 ))}
               </div>
             ) : (
-              <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 xl:grid-cols-3 gap-2 sm:gap-3">
                 {category.items.map((item) => (
                   <MenuItemButton key={item.id} item={item} onClick={() => openModal(item)} />
                 ))}
@@ -609,9 +682,9 @@ export default function App() {
             )}
           </div>
 
-          {/* Cart — desktop sidebar / mobile fixed bottom sheet */}
+          {/* Cart — desktop sidebar only; mobile uses the fixed bottom bar below */}
           <aside
-            className="static lg:sticky lg:top-20 h-fit rounded-2xl bg-white overflow-hidden z-20"
+            className="hidden lg:block lg:sticky lg:top-20 h-fit rounded-2xl bg-white overflow-hidden z-20"
             style={{ border: "1px solid #E4DCC7", boxShadow: "0 4px 20px rgba(22,58,79,0.06)" }}
           >
             <div className="px-4 py-3 flex items-center justify-between" style={{ background: "#163A4F" }}>
@@ -627,71 +700,12 @@ export default function App() {
             {selectedTable && (
               <div className="px-4 py-3 flex items-center gap-2 border-b" style={{ borderColor: "#F1ECDE" }}>
                 <span className="text-xs opacity-60 shrink-0">Serveur</span>
-                <div className="flex gap-1.5 flex-wrap">
-                  {WAITERS.map((w) => {
-                    const isAssigned = tableWaiters[selectedTable] === w.id;
-                    return (
-                      <button
-                        key={w.id}
-                        onClick={() => assignWaiter(selectedTable, w.id)}
-                        className="flex items-center gap-1 pl-1.5 pr-2.5 py-1 rounded-full text-xs font-medium transition-all"
-                        style={{
-                          background: isAssigned ? w.color : "#F6F1E4",
-                          color: isAssigned ? "#fff" : "#163A4F",
-                        }}
-                      >
-                        <span
-                          className="w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold"
-                          style={{
-                            background: isAssigned ? "rgba(255,255,255,0.3)" : w.color,
-                            color: "#fff",
-                          }}
-                        >
-                          {w.initial}
-                        </span>
-                        {w.name}
-                      </button>
-                    );
-                  })}
-                </div>
+                <WaiterPicker selectedTable={selectedTable} tableWaiters={tableWaiters} assignWaiter={assignWaiter} />
               </div>
             )}
 
             <div className="max-h-[35vh] lg:max-h-[42vh] overflow-y-auto px-4 py-3 divide-y" style={{ borderColor: "#F1ECDE" }}>
-              {cart.length === 0 ? (
-                <p className="text-sm py-6 text-center opacity-50">
-                  Le panier est vide. Touche un article du menu pour l'ajouter.
-                </p>
-              ) : (
-                cart.map((line, idx) => (
-                  <div key={idx} className="flex items-center justify-between py-2.5 gap-2">
-                    <div className="min-w-0">
-                      <div className="text-sm font-medium truncate">{line.name}</div>
-                      <div className="font-mono text-xs opacity-60">{money(line.price)} / unité</div>
-                    </div>
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <button
-                        onClick={() => updateQty(idx, -1)}
-                        className="w-6 h-6 rounded-full flex items-center justify-center"
-                        style={{ background: "#F6F1E4" }}
-                      >
-                        <Minus size={12} />
-                      </button>
-                      <span className="font-mono text-sm w-4 text-center">{line.qty}</span>
-                      <button
-                        onClick={() => updateQty(idx, 1)}
-                        className="w-6 h-6 rounded-full flex items-center justify-center"
-                        style={{ background: "#F6F1E4" }}
-                      >
-                        <Plus size={12} />
-                      </button>
-                      <button onClick={() => removeLine(idx)} className="w-6 h-6 flex items-center justify-center opacity-40 hover:opacity-100">
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
-                  </div>
-                ))
-              )}
+              <CartLines cart={cart} updateQty={updateQty} removeLine={removeLine} />
             </div>
 
             <div className="px-4 py-3 border-t" style={{ borderColor: "#F1ECDE" }}>
@@ -711,6 +725,91 @@ export default function App() {
             </div>
           </aside>
         </main>
+
+        {/* Mobile cart bar + drawer — keeps checkout reachable without
+            scrolling past the whole menu on a phone */}
+        <div className="lg:hidden">
+          {mobileCartOpen && (
+            <div
+              className="fixed inset-0 z-40"
+              style={{ background: "rgba(22,58,79,0.35)" }}
+              onClick={() => setMobileCartOpen(false)}
+            />
+          )}
+          <div
+            className="fixed inset-x-0 bottom-0 z-50 rounded-t-2xl bg-white overflow-hidden transition-transform"
+            style={{
+              border: "1px solid #E4DCC7",
+              boxShadow: "0 -4px 20px rgba(22,58,79,0.12)",
+              maxHeight: mobileCartOpen ? "80vh" : "0px",
+            }}
+          >
+            <button
+              onClick={() => setMobileCartOpen(false)}
+              className="w-full px-4 py-2.5 flex items-center justify-between"
+              style={{ background: "#163A4F" }}
+            >
+              <span className="flex items-center gap-2 text-[#F6F1E4]">
+                <Receipt size={15} />
+                <span className="font-display text-sm">
+                  {selectedTable ? `Table ${selectedTable}` : "Aucune table"}
+                </span>
+              </span>
+              <ChevronUp size={16} className="text-[#F6F1E4]" style={{ transform: "rotate(180deg)" }} />
+            </button>
+
+            {selectedTable && (
+              <div className="px-4 py-2.5 flex items-center gap-2 border-b" style={{ borderColor: "#F1ECDE" }}>
+                <span className="text-xs opacity-60 shrink-0">Serveur</span>
+                <WaiterPicker selectedTable={selectedTable} tableWaiters={tableWaiters} assignWaiter={assignWaiter} />
+              </div>
+            )}
+
+            <div className="max-h-[42vh] overflow-y-auto px-4 py-2 divide-y" style={{ borderColor: "#F1ECDE" }}>
+              <CartLines cart={cart} updateQty={updateQty} removeLine={removeLine} />
+            </div>
+
+            <div className="px-4 py-3 border-t" style={{ borderColor: "#F1ECDE" }}>
+              <div className="flex items-baseline justify-between mb-3">
+                <span className="text-sm font-medium">Total</span>
+                <span className="font-mono text-xl font-semibold" style={{ color: "#E0793F" }}>
+                  {money(cartTotal)}
+                </span>
+              </div>
+              <button
+                onClick={checkout}
+                className="w-full py-3 rounded-xl font-semibold flex items-center justify-center gap-2 transition-transform active:scale-[0.98]"
+                style={{ background: "#4FA98C", color: "#0E2431" }}
+              >
+                <Check size={17} /> Encaisser la commande
+              </button>
+            </div>
+          </div>
+
+          {/* Slim always-visible bar — tap to open the drawer above */}
+          <button
+            onClick={() => setMobileCartOpen((v) => !v)}
+            className="fixed inset-x-0 bottom-0 z-30 px-4 py-2.5 flex items-center justify-between"
+            style={{
+              background: "#163A4F",
+              boxShadow: "0 -2px 12px rgba(22,58,79,0.2)",
+              display: mobileCartOpen ? "none" : "flex",
+            }}
+          >
+            <span className="flex items-center gap-2 text-[#F6F1E4]">
+              <Receipt size={16} />
+              <span className="font-display text-sm">
+                {selectedTable ? `Table ${selectedTable}` : "Aucune table"}
+              </span>
+              <span className="font-mono text-xs text-[#F6F1E4]/70">· {cartCount} art.</span>
+            </span>
+            <span className="flex items-center gap-2">
+              <span className="font-mono text-sm font-semibold text-[#F6F1E4]">{money(cartTotal)}</span>
+              <ChevronUp size={16} className="text-[#F6F1E4]" />
+            </span>
+          </button>
+        </div>
+        </>
       ) : (
         <HistoryView
           orders={orders}
@@ -739,7 +838,7 @@ function ItemModal({ item, onClose, onAdd }) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center px-4 pb-4 sm:pb-4"
+      className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center px-4 pb-4 sm:pb-4"
       style={{ background: "rgba(22,58,79,0.45)" }}
       onClick={onClose}
     >
