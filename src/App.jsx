@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import {
   Plus, Minus, Trash2, Receipt, History, UtensilsCrossed,
-  ChevronLeft, ChevronUp, X, Check, Coffee, Salad, Sandwich, CupSoda
+  ChevronLeft, ChevronUp, X, Check, Coffee, Salad, Sandwich, CupSoda,
+  Pencil, Wallet, ArrowDownRight
 } from "lucide-react";
 
 /* ---------------------------------------------------------
@@ -39,8 +40,11 @@ const WAITERS = [
 /* Menu structure: main categories can either hold `items` directly
    (flat category) or `subcategories` (each with its own `items`),
    mirroring the printed Bilez menu (breakfast / starters & brik /
-   main dishes / snacks / drinks & desserts). */
-const MENU = [
+   main dishes / snacks / drinks & desserts).
+   This is only the starting point — the live menu used by the app is
+   kept in state and persisted to localStorage so items can be added
+   or removed from the UI. */
+const DEFAULT_MENU = [
   {
     id: "breakfast",
     label: "Petit-déjeuner",
@@ -191,6 +195,8 @@ const CATEGORY_ICONS = {
 
 const ORDERS_KEY = "bilez_orders_v1";
 const WAITERS_KEY = "bilez_table_waiters_v1";
+const MENU_KEY = "bilez_menu_v1";
+const EXPENSES_KEY = "bilez_expenses_v1";
 
 function money(n) {
   return `${n.toFixed(2)} DT`;
@@ -214,20 +220,122 @@ function FrondDivider({ tone = "#4FA98C" }) {
 
 /* ---------- Single menu item card, used for both flat categories
    and items nested inside a subcategory ---------- */
-function MenuItemButton({ item, onClick }) {
+function MenuItemButton({ item, onClick, editMode, onDelete }) {
+  return (
+    <div className="relative">
+      <button
+        onClick={editMode ? undefined : onClick}
+        disabled={editMode}
+        className="w-full flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1 sm:gap-3 rounded-2xl px-3 py-2.5 sm:px-4 sm:py-4 bg-white text-left transition-all active:scale-[0.97] hover:shadow-md"
+        style={{
+          border: editMode ? "1px dashed #E0793F88" : "1px solid #E4DCC7",
+          boxShadow: "0 1px 3px rgba(22,58,79,0.05)",
+        }}
+      >
+        <span className="text-[13px] sm:text-base font-medium leading-snug pr-4" style={{ color: "#1F2A24" }}>
+          {item.name}
+        </span>
+        <span className="font-mono text-xs sm:text-sm font-semibold shrink-0" style={{ color: "#E0793F" }}>
+          {item.variable ? `${item.range} DT` : money(item.price)}
+        </span>
+      </button>
+      {editMode && (
+        <button
+          onClick={onDelete}
+          className="absolute -top-1.5 -right-1.5 w-6 h-6 rounded-full flex items-center justify-center text-white shadow"
+          style={{ background: "#C1571E" }}
+          title="Supprimer cet article"
+        >
+          <X size={13} strokeWidth={3} />
+        </button>
+      )}
+    </div>
+  );
+}
+
+/* ---------- Small dashed tile to add a new menu item to a
+   category (or subcategory), opens AddMenuItemModal ---------- */
+function AddMenuItemTile({ onClick }) {
   return (
     <button
       onClick={onClick}
-      className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1 sm:gap-3 rounded-2xl px-3 py-2.5 sm:px-4 sm:py-4 bg-white text-left transition-all active:scale-[0.97] hover:shadow-md"
-      style={{ border: "1px solid #E4DCC7", boxShadow: "0 1px 3px rgba(22,58,79,0.05)" }}
+      className="flex items-center justify-center gap-1.5 rounded-2xl px-3 py-2.5 sm:px-4 sm:py-4 text-[13px] sm:text-base font-medium transition-all active:scale-[0.97] hover:bg-white"
+      style={{ border: "1px dashed #4FA98C99", color: "#3E8F76" }}
     >
-      <span className="text-[13px] sm:text-base font-medium leading-snug" style={{ color: "#1F2A24" }}>
-        {item.name}
-      </span>
-      <span className="font-mono text-xs sm:text-sm font-semibold shrink-0" style={{ color: "#E0793F" }}>
-        {item.variable ? `${item.range} DT` : money(item.price)}
-      </span>
+      <Plus size={15} /> Ajouter un article
     </button>
+  );
+}
+
+/* ---------- Modal to add a new menu item to a specific
+   category / subcategory, with a name and a price ---------- */
+function AddMenuItemModal({ target, onClose, onAdd }) {
+  const [name, setName] = useState("");
+  const [price, setPrice] = useState("");
+
+  const canSubmit = name.trim().length > 0 && price !== "" && !isNaN(parseFloat(price)) && parseFloat(price) >= 0;
+
+  function submit() {
+    if (!canSubmit) return;
+    onAdd(target, { name: name.trim(), price: Math.round(parseFloat(price) * 100) / 100 });
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center px-4 pb-4 sm:pb-4"
+      style={{ background: "rgba(22,58,79,0.45)" }}
+      onClick={onClose}
+    >
+      <div
+        className="w-full sm:max-w-sm rounded-2xl bg-white p-5"
+        style={{ border: "1px solid #E4DCC7" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between mb-4">
+          <div>
+            <h3 className="font-display text-lg" style={{ color: "#163A4F" }}>
+              Nouvel article
+            </h3>
+            <p className="text-xs opacity-60 mt-0.5">{target.label}</p>
+          </div>
+          <button onClick={onClose} className="opacity-50 hover:opacity-100">
+            <X size={18} />
+          </button>
+        </div>
+
+        <label className="block text-sm font-medium mb-1.5">Nom de l'article</label>
+        <input
+          type="text"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="ex. Citronnade"
+          autoFocus
+          className="w-full mb-4 px-3 py-2.5 rounded-xl text-sm"
+          style={{ border: "1px solid #E4DCC7" }}
+        />
+
+        <label className="block text-sm font-medium mb-1.5">Prix (DT)</label>
+        <input
+          type="number"
+          step="0.5"
+          min="0"
+          value={price}
+          onChange={(e) => setPrice(e.target.value)}
+          placeholder="0.00"
+          className="w-full mb-5 px-3 py-2.5 rounded-xl text-sm font-mono"
+          style={{ border: "1px solid #E4DCC7" }}
+        />
+
+        <button
+          onClick={submit}
+          disabled={!canSubmit}
+          className="w-full py-3 rounded-xl font-semibold flex items-center justify-center gap-2 disabled:opacity-40"
+          style={{ background: "#163A4F", color: "#F6F1E4" }}
+        >
+          <Plus size={16} /> Ajouter au menu
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -439,11 +547,15 @@ export default function App() {
 
   const [view, setView] = useState("order"); // 'order' | 'history'
   const [selectedTable, setSelectedTable] = useState(null);
-  const [activeCategory, setActiveCategory] = useState(MENU[0].id);
+  const [menu, setMenu] = useState(DEFAULT_MENU);
+  const [editMenuMode, setEditMenuMode] = useState(false);
+  const [addItemTarget, setAddItemTarget] = useState(null); // {categoryId, subcategoryId?, label}
+  const [activeCategory, setActiveCategory] = useState(DEFAULT_MENU[0].id);
   const [cartsByTable, setCartsByTable] = useState({}); // { [table]: [{itemId,name,price,qty}] }
   const cart = selectedTable ? cartsByTable[selectedTable] || [] : [];
   const [modalItem, setModalItem] = useState(null); // item being configured
   const [orders, setOrders] = useState([]);
+  const [expenses, setExpenses] = useState([]); // sorties de caisse: [{id,label,amount,createdAt}]
   const [tableWaiters, setTableWaiters] = useState({}); // { [table]: waiterId }
   const [discountsByTable, setDiscountsByTable] = useState({}); // { [table]: {type:'percent'|'amount', amount:number} }
   const discount = selectedTable ? discountsByTable[selectedTable] || null : null;
@@ -452,7 +564,7 @@ export default function App() {
   const [mobileCartOpen, setMobileCartOpen] = useState(false);
   const [historyDate, setHistoryDate] = useState(() => new Date().toISOString().slice(0, 10));
 
-  // load persisted orders + waiter assignments
+  // load persisted orders + waiter assignments + menu + expenses
   useEffect(() => {
     try {
       const raw = localStorage.getItem(ORDERS_KEY);
@@ -465,6 +577,22 @@ export default function App() {
       if (rawW) setTableWaiters(JSON.parse(rawW));
     } catch (e) {
       // no assignments yet
+    }
+    try {
+      const rawM = localStorage.getItem(MENU_KEY);
+      if (rawM) {
+        const parsedMenu = JSON.parse(rawM);
+        setMenu(parsedMenu);
+        if (parsedMenu[0]) setActiveCategory(parsedMenu[0].id);
+      }
+    } catch (e) {
+      // fall back to the default menu
+    }
+    try {
+      const rawE = localStorage.getItem(EXPENSES_KEY);
+      if (rawE) setExpenses(JSON.parse(rawE));
+    } catch (e) {
+      // no expenses yet
     } finally {
       setLoading(false);
     }
@@ -492,6 +620,80 @@ export default function App() {
       showToast("Erreur de sauvegarde — réessaie.");
     }
   }, [showToast]);
+
+  const persistMenu = useCallback((next) => {
+    setMenu(next);
+    try {
+      localStorage.setItem(MENU_KEY, JSON.stringify(next));
+    } catch (e) {
+      showToast("Erreur de sauvegarde — réessaie.");
+    }
+  }, [showToast]);
+
+  const persistExpenses = useCallback((next) => {
+    setExpenses(next);
+    try {
+      localStorage.setItem(EXPENSES_KEY, JSON.stringify(next));
+    } catch (e) {
+      showToast("Erreur de sauvegarde — réessaie.");
+    }
+  }, [showToast]);
+
+  // Add a new menu item to a category, or to one of its subcategories
+  function addMenuItem(target, { name, price }) {
+    const newItem = { id: `it_${Date.now()}`, name, price };
+    const next = menu.map((c) => {
+      if (c.id !== target.categoryId) return c;
+      if (target.subcategoryId) {
+        return {
+          ...c,
+          subcategories: c.subcategories.map((sub) =>
+            sub.id === target.subcategoryId ? { ...sub, items: [...sub.items, newItem] } : sub
+          ),
+        };
+      }
+      return { ...c, items: [...(c.items || []), newItem] };
+    });
+    persistMenu(next);
+    setAddItemTarget(null);
+    showToast(`"${name}" ajouté au menu.`);
+  }
+
+  // Remove a menu item from a category, or from one of its subcategories
+  function removeMenuItem(categoryId, subcategoryId, itemId, itemName) {
+    if (!window.confirm(`Supprimer "${itemName}" du menu ?`)) return;
+    const next = menu.map((c) => {
+      if (c.id !== categoryId) return c;
+      if (subcategoryId) {
+        return {
+          ...c,
+          subcategories: c.subcategories.map((sub) =>
+            sub.id === subcategoryId ? { ...sub, items: sub.items.filter((it) => it.id !== itemId) } : sub
+          ),
+        };
+      }
+      return { ...c, items: (c.items || []).filter((it) => it.id !== itemId) };
+    });
+    persistMenu(next);
+    showToast("Article supprimé du menu.");
+  }
+
+  // Sorties de caisse — cash taken out of the register (waiter tip,
+  // small purchase like ice, etc.)
+  function addExpense(label, amount) {
+    const expense = {
+      id: `${Date.now()}`,
+      label,
+      amount,
+      createdAt: new Date().toISOString(),
+    };
+    persistExpenses([expense, ...expenses]);
+    showToast("Sortie de caisse enregistrée.");
+  }
+
+  function deleteExpense(id) {
+    persistExpenses(expenses.filter((e) => e.id !== id));
+  }
 
   function assignWaiter(table, waiterId) {
     const next = { ...tableWaiters };
@@ -667,7 +869,16 @@ export default function App() {
     return WAITERS.map((w) => ({ ...w, total: totals[w.id] || 0 })).filter((w) => w.total > 0);
   }, [dayOrders]);
 
-  const category = MENU.find((c) => c.id === activeCategory);
+  const dayExpenses = useMemo(
+    () => expenses.filter((e) => e.createdAt.slice(0, 10) === historyDate),
+    [expenses, historyDate]
+  );
+  const dayExpensesTotal = useMemo(
+    () => dayExpenses.reduce((s, e) => s + e.amount, 0),
+    [dayExpenses]
+  );
+
+  const category = menu.find((c) => c.id === activeCategory);
 
   return (
     <div
@@ -843,8 +1054,8 @@ export default function App() {
 
             {/* Category tabs — wraps to as many rows as needed so every
                 category is visible at once, no horizontal scrolling */}
-            <div className="flex flex-wrap gap-1.5 sm:gap-2 mb-3 sm:mb-4">
-              {MENU.map((c) => {
+            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 mb-3 sm:mb-4">
+              {menu.map((c) => {
                 const Icon = CATEGORY_ICONS[c.id];
                 const isActive = activeCategory === c.id;
                 return (
@@ -865,6 +1076,18 @@ export default function App() {
                   </button>
                 );
               })}
+              <button
+                onClick={() => setEditMenuMode((v) => !v)}
+                className="ml-auto px-2.5 py-1.5 sm:px-4 sm:py-2 rounded-full text-[11px] sm:text-sm font-medium border flex items-center gap-1.5 transition-all shrink-0"
+                style={{
+                  background: editMenuMode ? "#163A4F" : "#fff",
+                  color: editMenuMode ? "#F6F1E4" : "#163A4F",
+                  borderColor: editMenuMode ? "#163A4F" : "#E4DCC7",
+                }}
+              >
+                {editMenuMode ? <Check size={14} /> : <Pencil size={13} />}
+                <span className="hidden sm:inline">{editMenuMode ? "Terminer" : "Modifier le menu"}</span>
+              </button>
             </div>
 
             {/* Items — subcategories stack one under the other so the
@@ -883,8 +1106,21 @@ export default function App() {
                     </div>
                     <div className="grid grid-cols-2 xl:grid-cols-3 gap-2 sm:gap-3">
                       {sub.items.map((item) => (
-                        <MenuItemButton key={item.id} item={item} onClick={() => openModal(item)} />
+                        <MenuItemButton
+                          key={item.id}
+                          item={item}
+                          editMode={editMenuMode}
+                          onClick={() => openModal(item)}
+                          onDelete={() => removeMenuItem(category.id, sub.id, item.id, item.name)}
+                        />
                       ))}
+                      {editMenuMode && (
+                        <AddMenuItemTile
+                          onClick={() =>
+                            setAddItemTarget({ categoryId: category.id, subcategoryId: sub.id, label: `${category.label} — ${sub.label}` })
+                          }
+                        />
+                      )}
                     </div>
                   </section>
                 ))}
@@ -892,8 +1128,19 @@ export default function App() {
             ) : (
               <div className="grid grid-cols-2 xl:grid-cols-3 gap-2 sm:gap-3">
                 {category.items.map((item) => (
-                  <MenuItemButton key={item.id} item={item} onClick={() => openModal(item)} />
+                  <MenuItemButton
+                    key={item.id}
+                    item={item}
+                    editMode={editMenuMode}
+                    onClick={() => openModal(item)}
+                    onDelete={() => removeMenuItem(category.id, null, item.id, item.name)}
+                  />
                 ))}
+                {editMenuMode && (
+                  <AddMenuItemTile
+                    onClick={() => setAddItemTarget({ categoryId: category.id, subcategoryId: null, label: category.label })}
+                  />
+                )}
               </div>
             )}
           </div>
@@ -1087,12 +1334,21 @@ export default function App() {
           setHistoryDate={setHistoryDate}
           onDelete={deleteOrder}
           loading={loading}
+          dayExpenses={dayExpenses}
+          dayExpensesTotal={dayExpensesTotal}
+          onAddExpense={addExpense}
+          onDeleteExpense={deleteExpense}
         />
       )}
 
       {/* Add-item modal */}
       {modalItem && (
         <ItemModal item={modalItem} onClose={() => setModalItem(null)} onAdd={addToCart} />
+      )}
+
+      {/* Add-menu-item modal */}
+      {addItemTarget && (
+        <AddMenuItemModal target={addItemTarget} onClose={() => setAddItemTarget(null)} onAdd={addMenuItem} />
       )}
     </div>
   );
@@ -1191,7 +1447,10 @@ function ItemModal({ item, onClose, onAdd }) {
   );
 }
 
-function HistoryView({ orders, dayOrders, dayTotal, topItems, waiterTotals, historyDate, setHistoryDate, onDelete, loading }) {
+function HistoryView({
+  orders, dayOrders, dayTotal, topItems, waiterTotals, historyDate, setHistoryDate, onDelete, loading,
+  dayExpenses, dayExpensesTotal, onAddExpense, onDeleteExpense,
+}) {
   return (
     <main className="max-w-4xl mx-auto px-4 sm:px-6 py-5">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
@@ -1207,7 +1466,7 @@ function HistoryView({ orders, dayOrders, dayTotal, topItems, waiterTotals, hist
         />
       </div>
 
-      <div className="grid sm:grid-cols-3 gap-3 mb-6">
+      <div className="grid sm:grid-cols-2 xl:grid-cols-4 gap-3 mb-6">
         <StatCard label="Chiffre d'affaires" value={money(dayTotal)} accent="#E0793F" />
         <StatCard label="Commandes" value={dayOrders.length} accent="#4FA98C" />
         <StatCard
@@ -1215,7 +1474,15 @@ function HistoryView({ orders, dayOrders, dayTotal, topItems, waiterTotals, hist
           value={dayOrders.length ? money(dayTotal / dayOrders.length) : money(0)}
           accent="#163A4F"
         />
+        <StatCard label="Caisse nette" value={money(dayTotal - dayExpensesTotal)} accent="#163A4F" />
       </div>
+
+      <ExpensesSection
+        dayExpenses={dayExpenses}
+        dayExpensesTotal={dayExpensesTotal}
+        onAdd={onAddExpense}
+        onDelete={onDeleteExpense}
+      />
 
       {waiterTotals.length > 0 && (
         <div className="mb-6 rounded-2xl bg-white p-4" style={{ border: "1px solid #E4DCC7" }}>
@@ -1311,6 +1578,92 @@ function HistoryView({ orders, dayOrders, dayTotal, topItems, waiterTotals, hist
         </div>
       )}
     </main>
+  );
+}
+
+/* ---------- Sorties de caisse — cash taken out of the register:
+   tips handed to a waiter, a small purchase (ice, bread...), etc. ---------- */
+function ExpensesSection({ dayExpenses, dayExpensesTotal, onAdd, onDelete }) {
+  const [label, setLabel] = useState("");
+  const [amount, setAmount] = useState("");
+
+  const canSubmit = label.trim().length > 0 && amount !== "" && !isNaN(parseFloat(amount)) && parseFloat(amount) > 0;
+
+  function submit() {
+    if (!canSubmit) return;
+    onAdd(label.trim(), Math.round(parseFloat(amount) * 100) / 100);
+    setLabel("");
+    setAmount("");
+  }
+
+  return (
+    <div className="mb-6 rounded-2xl bg-white p-4" style={{ border: "1px solid #E4DCC7" }}>
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-semibold flex items-center gap-2" style={{ color: "#163A4F" }}>
+          <Wallet size={15} /> Sorties de caisse
+        </h3>
+        <span className="font-mono text-sm font-semibold" style={{ color: "#C1571E" }}>
+          -{money(dayExpensesTotal)}
+        </span>
+      </div>
+
+      {/* Quick-add form: motif + montant */}
+      <div className="flex flex-wrap gap-2 mb-4">
+        <input
+          type="text"
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && submit()}
+          placeholder="Motif — ex. pourboire serveur, glace..."
+          className="flex-1 min-w-[160px] px-3 py-2 rounded-xl text-sm"
+          style={{ border: "1px solid #E4DCC7" }}
+        />
+        <input
+          type="number"
+          step="0.5"
+          min="0"
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && submit()}
+          placeholder="Montant DT"
+          className="w-28 px-3 py-2 rounded-xl text-sm font-mono"
+          style={{ border: "1px solid #E4DCC7" }}
+        />
+        <button
+          onClick={submit}
+          disabled={!canSubmit}
+          className="px-4 py-2 rounded-xl text-sm font-semibold flex items-center gap-1.5 disabled:opacity-40"
+          style={{ background: "#163A4F", color: "#F6F1E4" }}
+        >
+          <ArrowDownRight size={14} /> Sortir
+        </button>
+      </div>
+
+      {dayExpenses.length === 0 ? (
+        <p className="text-sm opacity-50 text-center py-2">Aucune sortie de caisse pour cette date.</p>
+      ) : (
+        <div className="space-y-2">
+          {dayExpenses.map((e) => (
+            <div key={e.id} className="flex items-center justify-between text-sm py-1.5 border-b last:border-b-0" style={{ borderColor: "#F1ECDE" }}>
+              <div className="min-w-0">
+                <div className="font-medium truncate">{e.label}</div>
+                <div className="text-xs opacity-50">
+                  {new Date(e.createdAt).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}
+                </div>
+              </div>
+              <div className="flex items-center gap-3 shrink-0">
+                <span className="font-mono font-semibold" style={{ color: "#C1571E" }}>
+                  -{money(e.amount)}
+                </span>
+                <button onClick={() => onDelete(e.id)} className="opacity-40 hover:opacity-100">
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
