@@ -29,13 +29,26 @@ const LOGO_DATA_URI =
 
 const TABLES = Array.from({ length: 80 }, (_, i) => i + 1);
 
-const WAITERS = [
+const DEFAULT_WAITERS = [
   { id: 1, name: "Abdou", initial: "A", color: "#4FA98C" },
   { id: 2, name: "Moez", initial: "M", color: "#E0793F" },
   { id: 3, name: "Ahmed", initial: "Ah", color: "#5B7FDB" },
   { id: 4, name: "Wissem", initial: "Wi", color: "#D6558C" },
   { id: 5, name: "Caisse", initial: "C", color: "#B08D2E" },
 ];
+
+// Palette cycled through when a new waiter is added, so each one gets
+// a distinct badge color without the user having to pick one.
+const WAITER_COLOR_PALETTE = [
+  "#4FA98C", "#E0793F", "#5B7FDB", "#D6558C", "#B08D2E",
+  "#3E8F76", "#C1571E", "#7C6FD1", "#4F8FA9", "#8FA94F",
+];
+
+function initialsFromName(name) {
+  const parts = name.trim().split(/\s+/);
+  if (parts.length === 1) return parts[0].slice(0, 2);
+  return (parts[0][0] + parts[1][0]).toUpperCase();
+}
 
 /* Menu structure: main categories can either hold `items` directly
    (flat category) or `subcategories` (each with its own `items`),
@@ -195,6 +208,7 @@ const CATEGORY_ICONS = {
 
 const ORDERS_KEY = "bilez_orders_v1";
 const WAITERS_KEY = "bilez_table_waiters_v1";
+const WAITERS_LIST_KEY = "bilez_waiters_list_v1";
 const MENU_KEY = "bilez_menu_v1";
 const EXPENSES_KEY = "bilez_expenses_v1";
 
@@ -339,40 +353,99 @@ function AddMenuItemModal({ target, onClose, onAdd }) {
   );
 }
 
-function WaiterPicker({ onPick, activeId }) {
+function WaiterPicker({ waiters, onPick, activeId, onAddWaiter, onRemoveWaiter }) {
+  const [manageMode, setManageMode] = useState(false);
+  const [newName, setNewName] = useState("");
+
+  function submitAdd() {
+    const name = newName.trim();
+    if (!name) return;
+    onAddWaiter(name);
+    setNewName("");
+  }
+
   return (
-    <div className="flex gap-2.5 flex-wrap">
-      {WAITERS.map((w) => {
-        const isAssigned = activeId === w.id;
-        return (
+    <div>
+      <div className="flex gap-2.5 flex-wrap items-center">
+        {waiters.map((w) => {
+          const isAssigned = activeId === w.id;
+          return (
+            <div key={w.id} className="relative">
+              <button
+                onClick={manageMode ? undefined : () => onPick(w.id)}
+                disabled={manageMode}
+                className="flex items-center gap-2 pl-2 pr-4 py-2 rounded-full text-sm font-semibold transition-all"
+                style={{
+                  background: isAssigned && !manageMode ? w.color : "#F6F1E4",
+                  color: isAssigned && !manageMode ? "#fff" : "#163A4F",
+                  border: manageMode ? "1px dashed #E0793F88" : "none",
+                }}
+              >
+                <span
+                  className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold"
+                  style={{
+                    background: isAssigned && !manageMode ? "rgba(255,255,255,0.3)" : w.color,
+                    color: "#fff",
+                  }}
+                >
+                  {w.initial}
+                </span>
+                {w.name}
+              </button>
+              {manageMode && (
+                <button
+                  onClick={() => onRemoveWaiter(w.id, w.name)}
+                  className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full flex items-center justify-center text-white shadow"
+                  style={{ background: "#C1571E" }}
+                  title="Supprimer ce serveur"
+                >
+                  <X size={11} strokeWidth={3} />
+                </button>
+              )}
+            </div>
+          );
+        })}
+        <button
+          onClick={() => setManageMode((v) => !v)}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-semibold"
+          style={{
+            background: manageMode ? "#163A4F" : "#F6F1E4",
+            color: manageMode ? "#F6F1E4" : "#163A4F",
+          }}
+        >
+          {manageMode ? <Check size={13} /> : <Pencil size={12} />}
+          {manageMode ? "Terminer" : "Gérer"}
+        </button>
+      </div>
+
+      {manageMode && (
+        <div className="flex gap-2 mt-2.5">
+          <input
+            type="text"
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && submitAdd()}
+            placeholder="Nom du nouveau serveur"
+            autoFocus
+            className="flex-1 min-w-[140px] px-3 py-2 rounded-xl text-sm"
+            style={{ border: "1px solid #E4DCC7" }}
+          />
           <button
-            key={w.id}
-            onClick={() => onPick(w.id)}
-            className="flex items-center gap-2 pl-2 pr-4 py-2 rounded-full text-sm font-semibold transition-all"
-            style={{
-              background: isAssigned ? w.color : "#F6F1E4",
-              color: isAssigned ? "#fff" : "#163A4F",
-            }}
+            onClick={submitAdd}
+            disabled={!newName.trim()}
+            className="px-3.5 py-2 rounded-xl text-sm font-semibold flex items-center gap-1.5 disabled:opacity-40"
+            style={{ background: "#163A4F", color: "#F6F1E4" }}
           >
-            <span
-              className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold"
-              style={{
-                background: isAssigned ? "rgba(255,255,255,0.3)" : w.color,
-                color: "#fff",
-              }}
-            >
-              {w.initial}
-            </span>
-            {w.name}
+            <Plus size={14} /> Ajouter
           </button>
-        );
-      })}
+        </div>
+      )}
     </div>
   );
 }
 
-function WaiterStep({ selectedTable, tableWaiters, assignWaiter }) {
-  const assigned = WAITERS.find((w) => w.id === tableWaiters[selectedTable]);
+function WaiterStep({ waiters, selectedTable, tableWaiters, assignWaiter, onAddWaiter, onRemoveWaiter }) {
+  const assigned = waiters.find((w) => w.id === tableWaiters[selectedTable]);
   const [manualOpen, setManualOpen] = useState(false);
 
   // Collapse back to the compact view whenever the selected table changes
@@ -403,7 +476,13 @@ function WaiterStep({ selectedTable, tableWaiters, assignWaiter }) {
       </span>
 
       {open ? (
-        <WaiterPicker onPick={handlePick} activeId={assigned?.id} />
+        <WaiterPicker
+          waiters={waiters}
+          onPick={handlePick}
+          activeId={assigned?.id}
+          onAddWaiter={onAddWaiter}
+          onRemoveWaiter={onRemoveWaiter}
+        />
       ) : (
         <button
           onClick={() => setManualOpen(true)}
@@ -550,6 +629,7 @@ export default function App() {
   const [menu, setMenu] = useState(DEFAULT_MENU);
   const [editMenuMode, setEditMenuMode] = useState(false);
   const [addItemTarget, setAddItemTarget] = useState(null); // {categoryId, subcategoryId?, label}
+  const [waiters, setWaiters] = useState(DEFAULT_WAITERS);
   const [activeCategory, setActiveCategory] = useState(DEFAULT_MENU[0].id);
   const [cartsByTable, setCartsByTable] = useState({}); // { [table]: [{itemId,name,price,qty}] }
   const cart = selectedTable ? cartsByTable[selectedTable] || [] : [];
@@ -593,6 +673,12 @@ export default function App() {
       if (rawE) setExpenses(JSON.parse(rawE));
     } catch (e) {
       // no expenses yet
+    }
+    try {
+      const rawWL = localStorage.getItem(WAITERS_LIST_KEY);
+      if (rawWL) setWaiters(JSON.parse(rawWL));
+    } catch (e) {
+      // fall back to the default waiter list
     } finally {
       setLoading(false);
     }
@@ -638,6 +724,48 @@ export default function App() {
       showToast("Erreur de sauvegarde — réessaie.");
     }
   }, [showToast]);
+
+  const persistWaiters = useCallback((next) => {
+    setWaiters(next);
+    try {
+      localStorage.setItem(WAITERS_LIST_KEY, JSON.stringify(next));
+    } catch (e) {
+      showToast("Erreur de sauvegarde — réessaie.");
+    }
+  }, [showToast]);
+
+  function addWaiter(name) {
+    const nextId = waiters.length ? Math.max(...waiters.map((w) => w.id)) + 1 : 1;
+    const color = WAITER_COLOR_PALETTE[waiters.length % WAITER_COLOR_PALETTE.length];
+    const newWaiter = { id: nextId, name, initial: initialsFromName(name), color };
+    persistWaiters([...waiters, newWaiter]);
+    showToast(`"${name}" ajouté aux serveurs.`);
+  }
+
+  function removeWaiter(id, name) {
+    if (!window.confirm(`Supprimer "${name}" de la liste des serveurs ?`)) return;
+    persistWaiters(waiters.filter((w) => w.id !== id));
+    // Unassign this waiter from any table currently holding a draft order
+    setTableWaiters((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      Object.keys(next).forEach((tKey) => {
+        if (next[tKey] === id) {
+          delete next[tKey];
+          changed = true;
+        }
+      });
+      if (changed) {
+        try {
+          localStorage.setItem(WAITERS_KEY, JSON.stringify(next));
+        } catch (e) {
+          // ignore
+        }
+      }
+      return next;
+    });
+    showToast("Serveur supprimé.");
+  }
 
   // Add a new menu item to a category, or to one of its subcategories
   function addMenuItem(target, { name, price }) {
@@ -866,7 +994,7 @@ export default function App() {
       const key = o.waiterId || "none";
       totals[key] = (totals[key] || 0) + o.total;
     });
-    return WAITERS.map((w) => ({ ...w, total: totals[w.id] || 0 })).filter((w) => w.total > 0);
+    return waiters.map((w) => ({ ...w, total: totals[w.id] || 0 })).filter((w) => w.total > 0);
   }, [dayOrders]);
 
   const dayExpenses = useMemo(
@@ -1005,7 +1133,7 @@ export default function App() {
               {/* Waiter legend */}
               <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 mt-2 sm:mt-3 mb-1">
                 <span className="text-[11px] sm:text-xs opacity-50">Serveurs :</span>
-                {WAITERS.map((w) => (
+                {waiters.map((w) => (
                   <span key={w.id} className="flex items-center gap-1.5 text-[11px] sm:text-xs font-medium" style={{ color: "#163A4F" }}>
                     <span className="w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full" style={{ background: w.color }} />
                     {w.name}
@@ -1017,7 +1145,7 @@ export default function App() {
                 {TABLES.map((t) => {
                   const active = selectedTable === t;
                   const hasDraft = (cartsByTable[t] || []).length > 0;
-                  const waiter = WAITERS.find((w) => w.id === tableWaiters[t]);
+                  const waiter = waiters.find((w) => w.id === tableWaiters[t]);
                   return (
                     <button
                       key={t}
@@ -1161,7 +1289,7 @@ export default function App() {
             </div>
 
             {selectedTable && (
-              <WaiterStep selectedTable={selectedTable} tableWaiters={tableWaiters} assignWaiter={assignWaiter} />
+              <WaiterStep waiters={waiters} selectedTable={selectedTable} tableWaiters={tableWaiters} assignWaiter={assignWaiter} onAddWaiter={addWaiter} onRemoveWaiter={removeWaiter} />
             )}
 
             <div className="max-h-[35vh] lg:max-h-[42vh] overflow-y-auto px-4 py-3 divide-y" style={{ borderColor: "#F1ECDE" }}>
@@ -1247,7 +1375,7 @@ export default function App() {
             </button>
 
             {selectedTable && (
-              <WaiterStep selectedTable={selectedTable} tableWaiters={tableWaiters} assignWaiter={assignWaiter} />
+              <WaiterStep waiters={waiters} selectedTable={selectedTable} tableWaiters={tableWaiters} assignWaiter={assignWaiter} onAddWaiter={addWaiter} onRemoveWaiter={removeWaiter} />
             )}
 
             <div className="max-h-[42vh] overflow-y-auto px-4 py-2 divide-y" style={{ borderColor: "#F1ECDE" }}>
@@ -1330,6 +1458,7 @@ export default function App() {
           dayTotal={dayTotal}
           topItems={topItems}
           waiterTotals={waiterTotals}
+          waiters={waiters}
           historyDate={historyDate}
           setHistoryDate={setHistoryDate}
           onDelete={deleteOrder}
@@ -1448,7 +1577,7 @@ function ItemModal({ item, onClose, onAdd }) {
 }
 
 function HistoryView({
-  orders, dayOrders, dayTotal, topItems, waiterTotals, historyDate, setHistoryDate, onDelete, loading,
+  orders, dayOrders, dayTotal, topItems, waiterTotals, waiters, historyDate, setHistoryDate, onDelete, loading,
   dayExpenses, dayExpensesTotal, onAddExpense, onDeleteExpense,
 }) {
   return (
@@ -1541,7 +1670,7 @@ function HistoryView({
                     Table {o.table}
                   </span>
                   {o.waiterId && (() => {
-                    const w = WAITERS.find((x) => x.id === o.waiterId);
+                    const w = waiters.find((x) => x.id === o.waiterId);
                     return w ? (
                       <span className="flex items-center gap-1 text-xs font-medium" style={{ color: w.color }}>
                         <span className="w-2 h-2 rounded-full" style={{ background: w.color }} />
