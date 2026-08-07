@@ -212,6 +212,17 @@ const WAITERS_LIST_KEY = "bilez_waiters_list_v1";
 const MENU_KEY = "bilez_menu_v1";
 const EXPENSES_KEY = "bilez_expenses_v1";
 
+// An order can be settled in several partial payments (avance + reste).
+// This derives what's been paid, what's left, and a status from the
+// order's `payments` list — always computed, never stored directly, so
+// it can't drift out of sync with the actual payment entries.
+function paymentInfo(order) {
+  const paid = (order.payments || []).reduce((s, p) => s + p.amount, 0);
+  const remaining = Math.max(0, Math.round((order.total - paid) * 1000) / 1000);
+  const status = remaining <= 0.001 ? "paid" : paid > 0 ? "partial" : "unpaid";
+  return { paid, remaining, status };
+}
+
 function money(n) {
   return `${n.toFixed(2)} DT`;
 }
@@ -946,6 +957,7 @@ export default function App() {
       total: finalTotal,
       waiterId: tableWaiters[selectedTable] || null,
       createdAt: new Date().toISOString(),
+      payments: [], // partial payments recorded afterwards, e.g. avance + reste
     };
     await persistOrders([order, ...orders]);
     setCartsByTable((prev) => {
@@ -968,12 +980,53 @@ export default function App() {
     await persistOrders(orders.filter((o) => o.id !== id));
   }
 
+  // Record a partial (or full) payment against an order. Capped to what's
+  // actually owed so a mistyped amount can't push an order into negative
+  // "remaining".
+  function addPayment(orderId, rawAmount) {
+    const amt = parseFloat(rawAmount);
+    if (isNaN(amt) || amt <= 0) return;
+    let recorded = 0;
+    const next = orders.map((o) => {
+      if (o.id !== orderId) return o;
+      const { remaining } = paymentInfo(o);
+      recorded = Math.min(amt, remaining);
+      if (recorded <= 0) return o;
+      const payment = {
+        id: `${Date.now()}`,
+        amount: recorded,
+        createdAt: new Date().toISOString(),
+      };
+      return { ...o, payments: [...(o.payments || []), payment] };
+    });
+    persistOrders(next);
+    if (recorded > 0) {
+      showToast(`Paiement de ${money(recorded)} enregistré.`);
+    }
+  }
+
+  function deletePayment(orderId, paymentId) {
+    const next = orders.map((o) => {
+      if (o.id !== orderId) return o;
+      return { ...o, payments: (o.payments || []).filter((p) => p.id !== paymentId) };
+    });
+    persistOrders(next);
+  }
+
   const dayOrders = useMemo(
     () => orders.filter((o) => o.createdAt.slice(0, 10) === historyDate),
     [orders, historyDate]
   );
   const dayTotal = useMemo(
     () => dayOrders.reduce((s, o) => s + o.total, 0),
+    [dayOrders]
+  );
+  const dayCollected = useMemo(
+    () => dayOrders.reduce((s, o) => s + paymentInfo(o).paid, 0),
+    [dayOrders]
+  );
+  const dayOutstanding = useMemo(
+    () => dayOrders.reduce((s, o) => s + paymentInfo(o).remaining, 0),
     [dayOrders]
   );
   const topItems = useMemo(() => {
@@ -1467,6 +1520,10 @@ export default function App() {
           dayExpensesTotal={dayExpensesTotal}
           onAddExpense={addExpense}
           onDeleteExpense={deleteExpense}
+          dayCollected={dayCollected}
+          dayOutstanding={dayOutstanding}
+          onAddPayment={addPayment}
+          onDeletePayment={deletePayment}
         />
       )}
 
@@ -1579,6 +1636,7 @@ function ItemModal({ item, onClose, onAdd }) {
 function HistoryView({
   orders, dayOrders, dayTotal, topItems, waiterTotals, waiters, historyDate, setHistoryDate, onDelete, loading,
   dayExpenses, dayExpensesTotal, onAddExpense, onDeleteExpense,
+  dayCollected, dayOutstanding, onAddPayment, onDeletePayment,
 }) {
   return (
     <main className="max-w-4xl mx-auto px-4 sm:px-6 py-5">
@@ -1605,6 +1663,13 @@ function HistoryView({
         />
         <StatCard label="Caisse nette" value={money(dayTotal - dayExpensesTotal)} accent="#163A4F" />
       </div>
+
+      {dayOutstanding > 0.001 && (
+        <div className="grid sm:grid-cols-2 gap-3 mb-6">
+          <StatCard label="Encaissé" value={money(dayCollected)} accent="#4FA98C" />
+          <StatCard label="Reste à encaisser" value={money(dayOutstanding)} accent="#C1571E" />
+        </div>
+      )}
 
       <ExpensesSection
         dayExpenses={dayExpenses}
@@ -1665,7 +1730,7 @@ function HistoryView({
           {dayOrders.map((o) => (
             <div key={o.id} className="rounded-xl bg-white p-4" style={{ border: "1px solid #E4DCC7" }}>
               <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-mono text-xs px-2 py-0.5 rounded-full" style={{ background: "#F6F1E4", color: "#163A4F" }}>
                     Table {o.table}
                   </span>
@@ -1699,14 +1764,117 @@ function HistoryView({
                   </button>
                 </div>
               </div>
-              <p className="text-xs opacity-60 leading-relaxed">
+              <p className="text-xs opacity-60 leading-relaxed mb-2.5">
                 {o.lines.map((l) => `${l.qty}× ${l.name}`).join(" · ")}
               </p>
+              <PaymentControl
+                order={o}
+                onAddPayment={(amount) => onAddPayment(o.id, amount)}
+                onDeletePayment={(paymentId) => onDeletePayment(o.id, paymentId)}
+              />
             </div>
           ))}
         </div>
       )}
     </main>
+  );
+}
+
+/* ---------- Paiement — un client peut régler en plusieurs fois
+   (avance puis reste). On affiche le statut et on permet d'ajouter
+   ou d'annuler des versements. ---------- */
+function PaymentControl({ order, onAddPayment, onDeletePayment }) {
+  const [amount, setAmount] = useState("");
+  const [expanded, setExpanded] = useState(false);
+  const { paid, remaining, status } = paymentInfo(order);
+  const payments = order.payments || [];
+
+  const badge = {
+    paid: { label: "Payé", bg: "#EAF5F0", fg: "#2F7D5C" },
+    partial: { label: "Partiel", bg: "#FBEFE6", fg: "#C1571E" },
+    unpaid: { label: "Non payé", bg: "#F6F1E4", fg: "#8A7E63" },
+  }[status];
+
+  function submit(rawAmount) {
+    const num = parseFloat(rawAmount);
+    if (isNaN(num) || num <= 0) return;
+    onAddPayment(num);
+    setAmount("");
+  }
+
+  return (
+    <div className="pt-2.5" style={{ borderTop: "1px dashed #E4DCC7" }}>
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <button
+          onClick={() => payments.length > 0 && setExpanded((v) => !v)}
+          className="flex items-center gap-2 text-xs font-medium"
+          style={{ cursor: payments.length > 0 ? "pointer" : "default" }}
+        >
+          <span className="px-2 py-0.5 rounded-full font-semibold" style={{ background: badge.bg, color: badge.fg }}>
+            {badge.label}
+          </span>
+          {status !== "unpaid" && (
+            <span className="font-mono opacity-60">
+              {money(paid)} / {money(order.total)}
+            </span>
+          )}
+          {status === "partial" && (
+            <span className="font-mono" style={{ color: "#C1571E" }}>
+              reste {money(remaining)}
+            </span>
+          )}
+        </button>
+
+        {status !== "paid" && (
+          <div className="flex items-center gap-1.5">
+            <input
+              type="number"
+              min="0"
+              step="0.5"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && submit(amount)}
+              placeholder={`sur ${money(remaining)}`}
+              className="w-24 px-2 py-1 rounded-lg text-xs font-mono"
+              style={{ border: "1px solid #E4DCC7" }}
+            />
+            <button
+              onClick={() => submit(amount)}
+              disabled={!amount}
+              className="px-2 py-1 rounded-lg text-xs font-medium disabled:opacity-40"
+              style={{ background: "#163A4F", color: "#F6F1E4" }}
+            >
+              Ajouter
+            </button>
+            <button
+              onClick={() => submit(remaining)}
+              className="px-2 py-1 rounded-lg text-xs font-medium"
+              style={{ background: "#4FA98C", color: "#0E2431" }}
+            >
+              Solder
+            </button>
+          </div>
+        )}
+      </div>
+
+      {expanded && payments.length > 0 && (
+        <div className="mt-2 space-y-1">
+          {payments.map((p) => (
+            <div key={p.id} className="flex items-center justify-between text-xs opacity-70">
+              <span>
+                {new Date(p.createdAt).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })} — versement
+              </span>
+              <span className="flex items-center gap-2">
+                <span className="font-mono">{money(p.amount)}</span>
+                <button onClick={() => onDeletePayment(p.id)} className="opacity-50 hover:opacity-100">
+                  <Trash2 size={12} />
+                </button>
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
